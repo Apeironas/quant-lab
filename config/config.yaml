@@ -1,0 +1,68 @@
+# =============================================================
+#  BOT YAPILANDIRMASI
+#  Kod değiştirmeden davranışı buradan ayarla.
+# =============================================================
+
+exchange:
+  id: binance          # ccxt borsa kimliği
+  testnet: true        # true = Binance Testnet (sanal para). CANLIYA GEÇMEDEN ÖNCE AYLARCA BÖYLE KALSIN.
+
+# Çalışma modu:
+#   paper = emirler borsaya GİTMEZ, lokal olarak komisyon+slippage ile simüle edilir
+#   live  = emirler borsaya gider (testnet=true ise yine sanal paradır)
+mode: paper
+
+market_data:
+  symbols: ["BTC/USDT"]   # İzlenecek pariteler. Birden fazla eklenebilir: ["BTC/USDT", "ETH/USDT"]
+  timeframe: "1m"          # Mum periyodu: 1m, 5m, 15m, 1h, 4h, 1d
+  history_bars: 400        # Başlangıç ısınması (ML özellikleri ~300 bar ister; bkz. MAX_LOOKBACK)
+  use_websocket: true      # true = ccxt.pro websocket, false = REST polling (yedek yol)
+  order_book_depth: 0      # >0 ise emir defteri de dinlenir (örn. 10). 0 = kapalı.
+
+# --- GERÇEKÇİLİK: komisyon ve kayma ---
+# Paper modda her simüle işlemden bu maliyetler düşülür.
+# AKTİF PROFİL: Binance USDT-Perpetual (futures) oranları.
+# Spot profili (eski): maker 0.10 / taker 0.10 / slippage 5 bps.
+fees:
+  maker_pct: 0.02          # % olarak - futures limit emir komisyonu
+  taker_pct: 0.05          # % olarak - futures piyasa emri komisyonu
+slippage:
+  bps: 3                   # BTC-perp likiditesi derin; küçük emirler için muhafazakâr varsayım
+
+# --- RİSK YÖNETİMİ (işin kalbi burası) ---
+risk:
+  risk_per_trade_pct: 1.0  # Her işlemde portföyün en fazla %1'i riske atılır (SL mesafesine göre boyutlandırma)
+  max_position_pct: 20.0   # Tek pozisyon, portföyün %20'sinden büyük olamaz (üst sınır)
+  max_open_positions: 2    # Aynı anda en fazla açık pozisyon sayısı
+  stop_loss_pct: 1.5       # Zorunlu SL: giriş fiyatının %1.5 altı (long için)
+  take_profit_pct: 3.0     # Zorunlu TP: giriş fiyatının %3 üstü (long için) -> 1:2 risk/ödül
+  max_daily_loss_pct: 5.0  # Günlük zarar bu eşiği aşarsa bot o gün yeni işlem AÇMAZ (devre kesici)
+
+portfolio:
+  initial_cash: 10000.0    # Paper mod başlangıç bakiyesi (USDT)
+
+strategy:
+  name: sma_crossover      # aktif strateji (main.py'deki STRATEGIES anahtarı)
+
+  # Her stratejinin parametreleri kendi bloğunda durur; aktif olmayan
+  # blokların varlığı zarar vermez. Backtest'te config'i değiştirmeden
+  # --strategy ml gibi geçici seçim de yapabilirsin.
+  sma_crossover:
+    fast_period: 20
+    slow_period: 50
+
+  ml:
+    model_path: models/ml_model.joblib  # eğitilmiş model (src/ml/train_example.py üretir)
+    long_threshold: 0.60   # p(başarı) bu eşiği aşarsa LONG sinyali
+    exit_threshold: 0.45   # p(başarı) bunun altına inerse pozisyondan çık
+    min_bars: 310          # özellik ısınması (MAX_LOOKBACK=300 + pay)
+    tp_atr: 2.0            # TP = giriş + 2.0*ATR (triple-barrier etiketiyle AYNI)
+    sl_atr: 1.0            # SL = giriş - 1.0*ATR (1:2 risk/ödül)
+    barrier_exit_only: true  # v2.1: proba-exit KAPALI; yalnız SL/TP/dikey bariyer çıkışı
+    time_stop_bars: 24     # dikey bariyer (bar); grid-search pencere başına otomatik ezer
+    # meta_model_path: models/meta_model.joblib  # meta-labeling modeli (henüz eğitilmedi)
+    # meta_threshold: 0.5  # meta p(başarı) vetosu eşiği
+
+logging:
+  level: INFO              # DEBUG yaparsan her olayın izini görürsün
+  dir: logs

@@ -1,0 +1,17 @@
+# Gizli anahtarlar - asla commit edilmemeli
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Loglar ve çalışma zamanı çıktıları
+logs/*.log
+*.sqlite
+
+# Büyük/üretilebilir dosyalar
+data/cache/
+models/

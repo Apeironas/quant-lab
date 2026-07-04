@@ -1,0 +1,25 @@
+# --- Borsa bağlantısı ---
+# ccxt >= 4.x, ccxt.pro (websocket) desteğini de içerir
+ccxt>=4.3.0
+
+# --- Veri işleme ---
+pandas>=2.0.0
+numpy>=2.0
+
+# --- Teknik indikatörler ---
+# Strateji modülünde RSI, MACD, SMA vb. için
+# (pandas-ta yerine 'ta': Python 3.14 + numpy 2.x uyumlu, aktif bakımda)
+ta>=0.11.0
+
+# --- Makine öğrenmesi (ML strateji şablonu) ---
+# Model eğitimi/çıkarımı için. LightGBM/XGBoost kullanmak istersen ayrıca
+# kurabilirsin - sklearn API'si (predict_proba) uyumlu her model çalışır.
+scikit-learn>=1.5
+joblib>=1.3
+
+# --- Yapılandırma ---
+PyYAML>=6.0
+python-dotenv>=1.0.0
+
+# --- Test ---
+pytest>=8.0
