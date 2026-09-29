@@ -138,6 +138,10 @@ async def run_walk_forward(args: argparse.Namespace) -> None:
         funding_df = await download_funding_history(config["exchange"]["id"], symbol, args.days)
         df = merge_derivatives(df, funding_df=funding_df)
         logger.info("Funding rate özellikleri AKTİF (%d kayıt birleştirildi)", len(funding_df))
+    if getattr(args, "orderbook", False):
+        from ..data.orderbook_store import merge_orderbook
+        df = merge_orderbook(df, symbol, bar_ms=timeframe_minutes(timeframe) * 60_000)
+        logger.info("Order book (OBI) özellikleri AKTİF")
     candles: list[dict] = df.to_dict("records")
 
     # Pencere sınırlarını çıkar: (train0, train1, test0, test1)
@@ -278,6 +282,8 @@ def main() -> None:
     parser.add_argument("--threshold", type=float, default=0.0)
     parser.add_argument("--funding", action="store_true",
                         help="Funding rate özelliklerini ekle (perpetual verisi)")
+    parser.add_argument("--orderbook", action="store_true",
+                        help="Order book (OBI) özelliklerini ekle (toplanan L2 verisi)")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
     asyncio.run(run_walk_forward(args))

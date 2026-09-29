@@ -11,7 +11,7 @@ Eğitim ile çıkarım aynı kodu çağırdığı için "train/serve skew" (eği
 başka, canlıda başka özellik) sınıfı hatalar yapısal olarak imkansızdır.
 
 =====================================================================
-VERİ SIZINTISI (DATA LEAKAGE) KURALLARI - YENİ ÖZELLİK EKLERKEN OKU
+VERİ SIZINTISI (DATA LEAKAGE) KURALLARI
 =====================================================================
 1. t satırındaki özellik, YALNIZCA t ve öncesi mumlardan hesaplanabilir.
    rolling(), pct_change(), shift(+n), ewm() -> güvenli (geriye bakar)
@@ -30,7 +30,7 @@ VERİ SIZINTISI (DATA LEAKAGE) KURALLARI - YENİ ÖZELLİK EKLERKEN OKU
 =====================================================================
 Üst zaman dilimi (4h/1d) barının değeri ancak o bar KAPANDIĞINDA bilinir.
 Saat 13:00 satırı, 16:00'da kapanacak 4h barın hiçbir bilgisini göremez.
-Bunu üç adımda garanti ederiz:
+Üç adımlı garanti:
 
     a) resample(label="left", closed="left"): 12:00 indeksli 4h bar,
        [12:00, 16:00) aralığını kapsar - yani 16:00'da kapanır.
@@ -98,7 +98,7 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
             İlk ~MAX_LOOKBACK satır NaN içerir (pencereler dolana kadar) -
             eğitimde build_dataset bunları atar, çıkarımda strateji kontrol eder.
 
-    >>> KENDİ ÖZELLİKLERİNİ BURAYA EKLE <<< (yukarıdaki sızıntı kurallarıyla)
+    Yeni özellikler yukarıdaki sızıntı kurallarına uyduğu sürece eklenebilir.
     """
     close, high, low = df["close"], df["high"], df["low"]
     open_, volume = df["open"], df["volume"]
@@ -153,8 +153,16 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df_dt = df.set_index(pd.to_datetime(df["ts"], unit="ms", utc=True))[
         ["open", "high", "low", "close", "volume"]]
 
-    if bar_ms <= 3_600_000:
-        # 1h (ve altı) taban: MTF = 4h eğim + günlük trend
+    if bar_ms < 3_600_000:
+        # DAKİKA ÖLÇEĞİ taban (5m/15m - mikroyapı araştırma profili):
+        # Günlük/4h MTF bilinçli olarak YOK - ısınmaları MAX_BUFFER'a sığmaz
+        # ve kısa veri dönemini yer. Trend bağlamı 1h katmanından gelir.
+        # NOT: 1m taban desteklenmez (1h SMA12 bile 780 bar ister); asgari 5m.
+        mtf_blocks = [
+            _htf_features(df_dt, "1h", "h1", sma_window=12, with_close_vs_sma=True),
+        ]
+    elif bar_ms == 3_600_000:
+        # 1h taban: MTF = 4h eğim + günlük trend
         mtf_blocks = [
             _htf_features(df_dt, "4h", "h4", sma_window=20, with_close_vs_sma=False),
             _htf_features(df_dt, "1D", "d1", sma_window=10, with_close_vs_sma=True),
@@ -193,6 +201,20 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
         # Momentum: bir funding periyodundaki (8 saat) değişim
         out["funding_diff_8h"] = f.diff(w8h)
 
+    # ================= MİKROYAPI (ORDER BOOK) ÖZELLİKLERİ =================
+    # Kolonlar src/data/orderbook_store.py -> merge_orderbook ile gelir
+    # (bar-içi istatistik, mum konvansiyonuyla hizalı - sızıntısız).
+    # Toplama dönemi dışındaki satırlar NaN'dır ve eğitimden düşer.
+    if "obi10_mean" in df.columns:
+        obi = df["obi10_mean"]
+        out["obi10_mean"] = obi                      # barın ortalama baskı dengesi
+        out["obi10_last"] = df["obi10_last"]         # bar kapanışındaki denge
+        out["obi10_std"] = df["obi10_std"]           # bar içi baskı oynaklığı
+        out["obi_persist_6"] = obi.rolling(6).mean() # kalıcılık (~30 dk @5m)
+        out["obi_mom_3"] = obi.diff(3)               # baskı momentumu
+        out["micro_basis_mean"] = df["micro_basis_mean"]
+        out["spread_mean"] = df["spread_bps_mean"]
+
     if "open_interest" in df.columns:
         # NOT: Binance OI geçmişini ~30 gün tutar; bu blok uzun backtest'te
         # değil, canlı/paper ve ileriye dönük biriken veriyle devreye girer.
@@ -221,12 +243,11 @@ def check_correlation(X: pd.DataFrame, threshold: float = 0.90) -> list[tuple[st
         for a, b, c in check_correlation(X):
             print(f"UYARI: {a} ~ {b} (r={c:.2f}) - birini elemeyi düşün")
 
-    ÖNEMLİ - eleme burada DEĞİL, build_features'ta yapılır:
-    Sütunları çalışma zamanında dinamik olarak düşürmek train/serve
-    tutarlılığını bozar (model eğitimde gördüğü sütun setini çıkarımda da
-    ister). Bir özelliği elemeye karar verirsen build_features içindeki
-    ilgili satırı sil/yoruma al ve modeli yeniden eğit - tek doğruluk
-    kaynağı ilkesi böyle korunur. Ağaç tabanlı modeller (LightGBM/XGBoost)
+    Eleme burada değil, build_features'ta yapılır: sütunları çalışma
+    zamanında dinamik düşürmek train/serve tutarlılığını bozar (model,
+    eğitimde gördüğü sütun setini çıkarımda da ister). Bir özellik
+    elenecekse build_features içindeki satırı kaldırıp model yeniden
+    eğitilir. Ağaç tabanlı modeller (LightGBM/XGBoost)
     çoklu bağlantıdan tahmin gücü olarak az etkilenir; buradaki amaç
     gürültüyü ve özellik-önemi yanılsamalarını azaltmaktır.
     """

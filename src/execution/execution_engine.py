@@ -37,9 +37,18 @@ class ExecutionEngine:
         self.taker_fee = config["fees"]["taker_pct"] / 100.0
         self.slippage = config["slippage"]["bps"] / 10_000.0
 
+        # MAKER YÜRÜTME MODELİ (yalnız paper): girişler limit emir olarak
+        # bekletilir; muhafazakâr dolum kuralı = fiyat seviyenin İÇİNDEN
+        # geçmeli (low < limit). TP çıkışı maker, SL/zaman çıkışı taker.
+        exec_cfg = config.get("execution", {})
+        self.entry_mode: str = exec_cfg.get("entry_mode", "market")
+        self.fill_window_bars: int = exec_cfg.get("fill_window_bars", 3)
+
         #: SL/TP izleme defteri: symbol -> {"stop_loss", "take_profit", "amount"}
         #: Portföyden ayrı tutulur: portföy muhasebe yapar, bu defter tetik izler.
         self._watchlist: dict[str, dict] = {}
+        #: Bekleyen limit girişler (maker modu): symbol -> emir + kalan bar
+        self._pending: dict[str, dict] = {}
 
         self._exchange: accxt.Exchange | None = None
         self._config = config
@@ -48,7 +57,7 @@ class ExecutionEngine:
         """Live modda borsa bağlantısını kur. Paper modda gerek yok."""
         if self.mode != "live":
             logger.info("Paper mod: emirler lokal simüle edilecek (komisyon=%%%.2f, slippage=%d bps)",
-                        self.taker_fee * 100, int(self.slippage * 10_000))
+                        self.taker_fee * 100, round(self.slippage * 10_000))
             return
         ex_cfg = self._config["exchange"]
         exchange_class = getattr(accxt, ex_cfg["id"])
@@ -76,6 +85,24 @@ class ExecutionEngine:
         if order.side == OrderSide.SELL and order.symbol not in self.portfolio.positions:
             logger.warning("SELL yok sayıldı: %s için açık pozisyon yok (%s)",
                            order.symbol, order.reason)
+            return
+
+        # --- MAKER GİRİŞ (paper): anında dolum yok, limit emir bekletilir ---
+        if (self.mode == "paper" and self.entry_mode == "maker"
+                and order.side == OrderSide.BUY):
+            if order.symbol in self._pending:
+                logger.debug("%s: zaten bekleyen limit emir var, yenisi yok sayıldı",
+                             order.symbol)
+                return
+            ref_price = order.price or self.portfolio.last_prices.get(order.symbol, 0.0)
+            if ref_price <= 0:
+                return
+            self._pending[order.symbol] = {
+                "order": order, "limit_price": ref_price,
+                "bars_left": self.fill_window_bars,
+            }
+            logger.info("%s: LIMIT giriş bekletildi @ %.2f (pencere=%d bar)",
+                        order.symbol, ref_price, self.fill_window_bars)
             return
 
         t0 = time.perf_counter()
@@ -161,16 +188,50 @@ class ExecutionEngine:
     #  SL/TP izleme - her yeni mumda çağrılır
     # ------------------------------------------------------------------ #
     async def on_market_event(self, event: MarketEvent) -> None:
+        # --- Bekleyen LIMIT girişler (maker modu) ---
+        pending = self._pending.get(event.symbol)
+        if pending is not None:
+            order = pending["order"]
+            if event.candle["low"] < pending["limit_price"]:
+                # MUHAFAZAKÂR dolum: fiyat seviyenin İÇİNDEN geçti (low < limit).
+                # "Değdi ama geçmedi" iyimserliği yok - kuyruk pozisyonu bilinemez.
+                fill_price = pending["limit_price"]
+                fee = order.amount * fill_price * self.maker_fee  # maker ücreti, slippage YOK
+                del self._pending[event.symbol]
+                self._watchlist[event.symbol] = {
+                    "stop_loss": order.stop_loss,
+                    "take_profit": order.take_profit,
+                    "amount": order.amount,
+                    "bars_left": order.time_stop_bars if order.time_stop_bars > 0 else None,
+                }
+                logger.info("%s: LIMIT giriş DOLDU @ %.2f (maker, ücret=%.4f)",
+                            event.symbol, fill_price, fee)
+                await self.bus.publish(FillEvent(
+                    symbol=event.symbol, side=OrderSide.BUY, amount=order.amount,
+                    fill_price=fill_price, fee_quote=fee,
+                    order_id=f"paper-maker-{int(time.time() * 1000)}",
+                    reason=order.reason + " (maker dolum)",
+                ))
+                return  # dolum barında bariyer kontrolü yapılmaz (muhafazakâr)
+            pending["bars_left"] -= 1
+            if pending["bars_left"] <= 0:
+                del self._pending[event.symbol]
+                logger.info("%s: LIMIT giriş DOLMADI, iptal (fiyat %.2f seviyesine inmedi)",
+                            event.symbol, pending["limit_price"])
+
         pos = self._watchlist.get(event.symbol)
         if pos is None:
             return
 
         low, high = event.candle["low"], event.candle["high"]
         exit_reason: str | None = None
-        # Muhafazakâr varsayım: aynı mumda ikisi de değdiyse ÖNCE SL sayılır
+        # Muhafazakâr varsayım: aynı mumda ikisi de değdiyse ÖNCE SL sayılır.
+        # Maker modunda TP için katı kural: seviye İÇİNDEN geçilmeli (high > tp).
+        tp_hit = (high > pos["take_profit"]) if self.entry_mode == "maker" \
+            else (high >= pos["take_profit"])
         if low <= pos["stop_loss"]:
             exit_reason = "STOP_LOSS tetiklendi"
-        elif high >= pos["take_profit"]:
+        elif tp_hit:
             exit_reason = "TAKE_PROFIT tetiklendi"
         elif pos.get("bars_left") is not None:
             # DİKEY BARİYER (v2.1): bar sayacı işler; süre dolunca mum
@@ -196,9 +257,14 @@ class ExecutionEngine:
             trigger_price = details["take_profit"]
         else:  # TIME_STOP
             trigger_price = event.candle["close"]
+        # TP çıkışı maker modunda LIMIT'tir (kendi fiyatından, maker ücreti,
+        # slippage yok); SL ve zaman çıkışı her zaman taker (panik emri).
+        exit_type = (OrderType.LIMIT
+                     if exit_reason.startswith("TAKE_PROFIT") and self.entry_mode == "maker"
+                     else OrderType.MARKET)
         await self.bus.publish(OrderEvent(
             symbol=event.symbol, side=OrderSide.SELL,
-            order_type=OrderType.MARKET, amount=details["amount"],
+            order_type=exit_type, amount=details["amount"],
             price=trigger_price,
             stop_loss=details["stop_loss"], take_profit=details["take_profit"],
             reason=exit_reason,

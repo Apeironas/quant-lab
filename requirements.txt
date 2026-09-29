@@ -21,5 +21,8 @@ joblib>=1.3
 PyYAML>=6.0
 python-dotenv>=1.0.0
 
+# --- Araçlar ---
+rich>=13.0        # canlı terminal dashboard'u (src/tools/live_dashboard.py)
+
 # --- Test ---
 pytest>=8.0

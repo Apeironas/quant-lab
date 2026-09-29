@@ -16,9 +16,9 @@ Nasıl çalışır:
   3. Sonunda performans raporu basılır: işlem sayısı, kazanma oranı,
      max drawdown, brüt/net PnL, al-ve-tut kıyası.
 
-Bilinçli basitleştirme: emir, sinyal mumunun kapanış fiyatından (+slippage)
-dolar. Daha da katı olmak istersen "bir sonraki mumun açılışından doldur"
-kuralına geçilebilir - farklıysa stratejin zaten kırılgandır.
+Basitleştirme: emir, sinyal mumunun kapanış fiyatından (+slippage) dolar.
+Alternatif olarak "bir sonraki mumun açılışından doldur" kuralı kullanılabilir;
+iki sonuç belirgin farklıysa strateji kırılgan demektir.
 """
 from __future__ import annotations
 

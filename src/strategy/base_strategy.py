@@ -73,9 +73,8 @@ class BaseStrategy(ABC):
     @abstractmethod
     def generate_signal(self, symbol: str, candles: pd.DataFrame) -> SignalEvent | None:
         """
-        ==================================================================
-        >>> KENDİ AL/SAT MANTIĞIN BURAYA <<<
-        ==================================================================
+        Al/sat mantığının uygulandığı yer; alt sınıflar bunu doldurur.
+
         Girdi:
             symbol  - "BTC/USDT" gibi parite adı
             candles - kronolojik sıralı mum DataFrame'i
@@ -86,10 +85,8 @@ class BaseStrategy(ABC):
             None        -> bu mumda işlem yok
 
         Notlar:
-          - 'ta' kütüphanesiyle indikatör: ta.momentum.rsi(candles["close"], window=14) vb.
-          - ML modeli entegre etmek için: modeli __init__'te yükle,
-            burada candles'tan özellik çıkarıp predict() çağır,
-            olasılığı SignalEvent.strength alanına yaz.
-          - Miktar/boyut HESAPLAMA - o RiskManager'ın işi.
+          - İndikatörler 'ta' kütüphanesinden: ta.momentum.rsi(close, window=14)
+          - ML modelleri __init__'te yüklenir; olasılık SignalEvent.strength'e yazılır
+          - Pozisyon boyutu burada hesaplanmaz, RiskManager'a aittir
         """
         raise NotImplementedError

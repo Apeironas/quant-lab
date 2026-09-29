@@ -105,6 +105,11 @@ async def run_grid_search(args: argparse.Namespace) -> None:
     setup_logging(config["logging"]["dir"], "INFO" if args.verbose else "WARNING")
     logger.setLevel(logging.INFO)
 
+    if args.maker:
+        # Maker yürütme modeli: limit giriş (muhafazakâr dolum) + maker TP
+        config.setdefault("execution", {})["entry_mode"] = "maker"
+        logger.info("MAKER yürütme modeli AKTİF (limit giriş + maker TP çıkışı)")
+
     horizons = [int(h) for h in args.horizons.split(",")]
     thresholds = parse_thresholds(args.thresholds)
     symbol = args.symbol or config["market_data"]["symbols"][0]
@@ -126,6 +131,12 @@ async def run_grid_search(args: argparse.Namespace) -> None:
         funding_df = await download_funding_history(config["exchange"]["id"], symbol, args.days)
         df = merge_derivatives(df, funding_df=funding_df)
         logger.info("Funding rate özellikleri AKTİF (%d kayıt birleştirildi)", len(funding_df))
+    if args.orderbook:
+        # OBI bar istatistiklerini mumlara göm (toplama dönemi dışı NaN kalır
+        # ve eğitimden düşer - bkz. orderbook_store.py)
+        from ..data.orderbook_store import merge_orderbook
+        df = merge_orderbook(df, symbol, bar_ms=timeframe_minutes(timeframe) * 60_000)
+        logger.info("Order book (OBI) özellikleri AKTİF")
     candles: list[dict] = df.to_dict("records")
 
     windows: list[tuple[int, int, int, int]] = []
@@ -289,6 +300,10 @@ def main() -> None:
                         help="Pozitif etiket için asgari getiri")
     parser.add_argument("--funding", action="store_true",
                         help="Funding rate özelliklerini ekle (perpetual verisi)")
+    parser.add_argument("--orderbook", action="store_true",
+                        help="Order book (OBI) özelliklerini ekle (toplanan L2 verisi)")
+    parser.add_argument("--maker", action="store_true",
+                        help="Maker yürütme modeli: limit giriş + maker TP (paper)")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
     asyncio.run(run_grid_search(args))

@@ -17,9 +17,8 @@ Ne yapar:
        (değerlendirme dürüst holdout'ta yapıldı; dağıtıma giden model ise
         eldeki tüm bilgiyi kullanır - standart pratik)
 
-Kendi modelini kullanmak istersen: sadece `make_model()` fonksiyonunu değiştir
-(LightGBM/XGBoost sklearn-wrapper'ları dahil predict_proba'sı olan her şey olur)
-veya tamamen kendi pipeline'ınla eğitip joblib.dump ile kaydet.
+Model mimarisi `make_model()` içinde tanımlıdır; predict_proba sunan her
+sklearn-API modeli (LightGBM/XGBoost wrapper'ları dahil) kullanılabilir.
 
 NOT: Bu script tek bir train/test bölmesidir - hızlı fikir elemek içindir.
 Nihai karar için sıradaki modül olan Walk-Forward analizi kullanılacak
@@ -49,8 +48,7 @@ MODELS_DIR = Path("models")
 
 def make_model():
     """
-    >>> KENDİ MODELİNİ BURADA TANIMLA <<<
-    Örnekler:
+    Model mimarisi. Alternatifler:
         from lightgbm import LGBMClassifier
         return LGBMClassifier(n_estimators=400, learning_rate=0.03)
 

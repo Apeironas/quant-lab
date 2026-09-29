@@ -47,9 +47,11 @@ class DataFetcher:
 
         ex_cfg = config["exchange"]
         exchange_class = getattr(ccxtpro, ex_cfg["id"])
+        # Piyasa verisi HALKA AÇIKTIR: anahtar gönderilmez. (Anahtar taşımak
+        # zararsız değil: testnet anahtarı production'a giderse borsa
+        # "Invalid Api-Key" ile reddediyor.) Anahtarlar yalnız emir gönderen
+        # ExecutionEngine'de ve yalnız live modda kullanılır.
         self.exchange = exchange_class({
-            "apiKey": ex_cfg["api_key"],
-            "secret": ex_cfg["api_secret"],
             "enableRateLimit": True,   # ccxt istek sınırlarını otomatik yönetir
         })
         if ex_cfg.get("testnet", True):
@@ -82,8 +84,14 @@ class DataFetcher:
         Tek sembol için sonsuz veri döngüsü.
         Sadece KAPANAN mumları yayınlarız: strateji, oluşumu bitmemiş mumla
         karar verirse aynı mum içinde sinyal girip çıkabilir (repaint sorunu).
+
+        Kapanış tespiti ZAMAN DAMGASI DEVRİYLE yapılır: daha yeni ts'li bir
+        mum göründüğü anda, izlenen önceki mum kapanmış demektir ve yayınlanır.
+        (Eski mantık liste uzunluğuna bakıyordu; ccxt.pro varsayılan "delta"
+        modunda her güncellemede 1 mumluk liste döndürdüğünden kapanışlar HİÇ
+        yakalanmıyordu; hata canlı paper akışında ortaya çıktı.)
         """
-        last_ts: int | None = None
+        forming: list | None = None  # şu an oluşmakta olan mum [ts,o,h,l,c,v]
         while True:
             try:
                 if self.use_websocket:
@@ -92,18 +100,22 @@ class DataFetcher:
                     ohlcvs = await self.exchange.fetch_ohlcv(symbol, self.timeframe, limit=2)
                     await asyncio.sleep(5)  # REST polling aralığı
 
-                # watch_ohlcv güncellenen son mum(lar)ı döndürür.
-                # Sondan bir önceki mum "kapanmış" demektir; onu yayınla.
-                if len(ohlcvs) >= 2:
-                    closed = ohlcvs[-2]
-                    if last_ts is None or closed[0] > last_ts:
-                        last_ts = closed[0]
+                for candle in ohlcvs:
+                    if forming is None:
+                        forming = list(candle)          # ilk gözlem: izlemeye başla
+                    elif candle[0] == forming[0]:
+                        forming = list(candle)          # aynı mumun güncellenmesi
+                    elif candle[0] > forming[0]:
+                        # Yeni mum başladı -> önceki mum KAPANDI, yayınla
                         await self.bus.publish(MarketEvent(
                             symbol=symbol,
                             timeframe=self.timeframe,
-                            candle=_candle_dict(closed),
+                            candle=_candle_dict(forming),
                         ))
-                        logger.debug("%s yeni mum: close=%.2f", symbol, closed[4])
+                        logger.info("%s mum kapandı: close=%.2f -> stratejiye iletildi",
+                                    symbol, forming[4])
+                        forming = list(candle)
+                    # candle[0] < forming[0]: geçmiş veri tekrarı, yok say
 
             except Exception as exc:
                 # Ağ kopması, borsa bakımı vb. - botu düşürme, bekle ve yeniden bağlan

@@ -28,9 +28,8 @@ from .utils.logger import setup_logging
 logger = logging.getLogger("main")
 
 # =====================================================================
-# >>> KENDİ STRATEJİNİ BURAYA KAYDET <<<
-# Yeni strateji yazınca: import et, bu sözlüğe ekle,
-# config.yaml'da strategy.name'i değiştir. Başka hiçbir yere dokunma.
+# Strateji kaydı: yeni strateji import edilip bu sözlüğe eklenir,
+# ardından config.yaml'daki strategy.name ile seçilir.
 # =====================================================================
 STRATEGIES = {
     "sma_crossover": SmaCrossoverStrategy,

@@ -131,8 +131,8 @@ async def analyze(args: argparse.Namespace) -> None:
     if noise:
         print(f"  Gürültü adayları ({len(noise)}): {', '.join(noise)}")
         print("  Bunlar karıştırılınca AUC düşmüyor -> model onlarsız da aynı.")
-        print("  Elemek istersen: build_features'tan çıkar, modeli yeniden eğit,")
-        print("  kararı grid-search OOS raporuyla doğrula (tek doğruluk kaynağı ilkesi).")
+        print("  Eleme yolu: build_features'tan çıkar, modeli yeniden eğit,")
+        print("  kararı grid-search OOS raporuyla doğrula.")
     print()
 
 

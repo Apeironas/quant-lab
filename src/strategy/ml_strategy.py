@@ -67,7 +67,7 @@ class MLStrategy(BaseStrategy):
                 raise FileNotFoundError(
                     f"Model dosyası yok: {model_path}\n"
                     f"Önce eğit: python -m src.ml.train_example --days 365 --timeframe 1h\n"
-                    f"veya kendi modelini joblib.dump(model, '{model_path}') ile kaydet."
+                    f"veya joblib.dump(model, '{model_path}') ile bir model kaydedin."
                 )
             self.model = joblib.load(model_path)
             logger.info("Model yüklendi: %s (%s)", model_path, type(self.model).__name__)
@@ -117,6 +117,14 @@ class MLStrategy(BaseStrategy):
         proba_up = float(self.model.predict_proba(x_last)[0, 1])
         price = float(candles["close"].iloc[-1])
         in_long = self._in_long.get(symbol, False)
+
+        # Her mum kapanışında kararı logla (canlıda 4h'de bir satır - izlenebilirlik).
+        # Backtest'te log seviyesi WARNING olduğundan bu satır raporu kirletmez.
+        logger.info("%s değerlendirme: p(başarı)=%.3f | eşik=%.2f | pozisyon=%s -> %s",
+                    symbol, proba_up, self.long_threshold,
+                    "AÇIK" if in_long else "yok",
+                    "sinyal üretilecek" if (proba_up >= self.long_threshold and not in_long)
+                    else "PAS")
 
         # Histerezis: giriş eşiği çıkış eşiğinden yüksek tutulur ki
         # olasılık eşik etrafında titreştiğinde gir-çık yapılmasın.

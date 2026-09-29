@@ -5,8 +5,7 @@ Merkezi loglama kurulumu.
   1. Konsol - anlık takip için
   2. logs/bot_YYYY-MM-DD.log - kalıcı kayıt (her işlem, hata, gecikme buraya düşer)
 
-Neden önemli: canlıda bir şey ters gittiğinde "dün gece 03:14'te ne oldu?"
-sorusunun tek cevabı bu dosyalardır.
+Canlı çalışmada geriye dönük teşhisin tek kaynağı bu dosyalardır.
 """
 from __future__ import annotations
 

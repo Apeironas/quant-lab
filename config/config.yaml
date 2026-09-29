@@ -5,7 +5,11 @@
 
 exchange:
   id: binance          # ccxt borsa kimliği
-  testnet: true        # true = Binance Testnet (sanal para). CANLIYA GEÇMEDEN ÖNCE AYLARCA BÖYLE KALSIN.
+  # PAPER PROVA DÜZENİ (Tem 2026): testnet=false + mode=paper -> fiyat akışı
+  # GERÇEK piyasadan gelir (halka açık, anahtar gerekmez), emirler ise asla
+  # borsaya gitmez (yerel simülasyon). En gerçekçi parasız prova budur.
+  # mode=live'a geçmeden testnet'i tekrar true yapmayı UNUTMA.
+  testnet: false
 
 # Çalışma modu:
 #   paper = emirler borsaya GİTMEZ, lokal olarak komisyon+slippage ile simüle edilir
@@ -14,7 +18,7 @@ mode: paper
 
 market_data:
   symbols: ["BTC/USDT"]   # İzlenecek pariteler. Birden fazla eklenebilir: ["BTC/USDT", "ETH/USDT"]
-  timeframe: "1m"          # Mum periyodu: 1m, 5m, 15m, 1h, 4h, 1d
+  timeframe: "4h"          # Mum periyodu: 1m, 5m, 15m, 1h, 4h, 1d
   history_bars: 400        # Başlangıç ısınması (ML özellikleri ~300 bar ister; bkz. MAX_LOOKBACK)
   use_websocket: true      # true = ccxt.pro websocket, false = REST polling (yedek yol)
   order_book_depth: 0      # >0 ise emir defteri de dinlenir (örn. 10). 0 = kapalı.
@@ -29,6 +33,16 @@ fees:
 slippage:
   bps: 3                   # BTC-perp likiditesi derin; küçük emirler için muhafazakâr varsayım
 
+# --- YÜRÜTME PROFİLİ (paper simülasyonu) ---
+execution:
+  entry_mode: market       # market = anında taker dolum | maker = limit emir modeli:
+                           #   giriş, sinyal barının kapanışına limit koyar; fiyat
+                           #   seviyenin İÇİNDEN GEÇERSE (low < limit) maker ücretiyle
+                           #   dolar, yoksa fill_window bar sonra iptal olur.
+                           #   TP çıkışı da maker olur; SL/zaman çıkışı taker kalır.
+                           #   Şimdilik yalnız paper modda desteklenir.
+  fill_window_bars: 3      # limit girişin dolması için beklenecek bar sayısı
+
 # --- RİSK YÖNETİMİ (işin kalbi burası) ---
 risk:
   risk_per_trade_pct: 1.0  # Her işlemde portföyün en fazla %1'i riske atılır (SL mesafesine göre boyutlandırma)
@@ -42,7 +56,7 @@ portfolio:
   initial_cash: 10000.0    # Paper mod başlangıç bakiyesi (USDT)
 
 strategy:
-  name: sma_crossover      # aktif strateji (main.py'deki STRATEGIES anahtarı)
+  name: ml                 # aktif strateji (main.py'deki STRATEGIES anahtarı)
 
   # Her stratejinin parametreleri kendi bloğunda durur; aktif olmayan
   # blokların varlığı zarar vermez. Backtest'te config'i değiştirmeden
@@ -53,8 +67,8 @@ strategy:
 
   ml:
     model_path: models/ml_model.joblib  # eğitilmiş model (src/ml/train_example.py üretir)
-    long_threshold: 0.60   # p(başarı) bu eşiği aşarsa LONG sinyali
-    exit_threshold: 0.45   # p(başarı) bunun altına inerse pozisyondan çık
+    long_threshold: 0.50   # p(başarı) eşiği (TB taban oranı ~0.35; başabaş p=1/3)
+    exit_threshold: 0.40   # barrier_exit_only=true iken kullanılmaz (bariyerler çıkarır)
     min_bars: 310          # özellik ısınması (MAX_LOOKBACK=300 + pay)
     tp_atr: 2.0            # TP = giriş + 2.0*ATR (triple-barrier etiketiyle AYNI)
     sl_atr: 1.0            # SL = giriş - 1.0*ATR (1:2 risk/ödül)

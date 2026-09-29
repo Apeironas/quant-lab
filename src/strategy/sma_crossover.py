@@ -3,9 +3,8 @@
 
 Hızlı ortalama yavaşı yukarı keserse AL, aşağı keserse ÇIK.
 
-DİKKAT: Bu strateji kâr etmek için değil, iskeletin uçtan uca çalıştığını
-göstermek için var. Kendi stratejini yazarken bu dosyayı şablon olarak
-kopyala; asıl değiştireceğin yer generate_signal() metodudur.
+Kâr amaçlı değil, referans amaçlıdır: iskeletin uçtan uca çalıştığını
+doğrular ve yeni stratejiler için şablon görevi görür.
 """
 from __future__ import annotations
 

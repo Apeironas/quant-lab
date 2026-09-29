@@ -14,4 +14,6 @@ logs/*.log
 
 # Büyük/üretilebilir dosyalar
 data/cache/
+data/orderbook/
+data/harvest/
 models/
